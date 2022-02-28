@@ -4,11 +4,16 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/binary"
+	"net"
 	"time"
 )
 
 var MainnetStartString = [4]byte{0xBF, 0x0C, 0x6B, 0xBD}
 var TestnetStartString = [4]byte{0xCE, 0xE2, 0xCA, 0xFF}
+
+var VersionCmd = [12]byte{'v', 'e', 'r', 's', 'i', 'o', 'n', 0x00, 0x00, 0x00, 0x00, 0x00}
+var VerackCmd = [12]byte{'v', 'e', 'r', 'a', 'c', 'k', 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}
+var GetaddrCmd = [12]byte{'g', 'e', 't', 'a', 'd', 'd', 'r', 0x00, 0x00, 0x00, 0x00, 0x00}
 
 const (
 	ServiceUnnamed            = 0x00
@@ -58,10 +63,16 @@ func CalculateChecksum(payload []byte) [4]byte {
 	return res
 }
 
-func MapIpv4toIpv6(ipv4 [4]byte) [16]byte {
-	res := [16]byte{0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, ipv4[3], ipv4[2], ipv4[1], ipv4[0]}
+func MapIp(ip net.IP) [16]byte {
+	res := [16]byte{}
 	buf := new(bytes.Buffer)
-	binary.Write(buf, binary.BigEndian, res)
+	if ip.To4() != nil { //ipv4
+		res = [16]byte{0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, ip[0], ip[1], ip[2], ip[3]}
+	} else { // ipv6
+		res = [16]byte{ip[0], ip[1], ip[2], ip[3], ip[4], ip[5], ip[6], ip[7], ip[8], ip[9], ip[10], ip[11], ip[12], ip[13], ip[14], ip[15]}
+	}
+	binary.Write(buf, binary.LittleEndian, res)
+	copy(res[:16], buf.Bytes())
 	return res
 }
 
@@ -70,16 +81,16 @@ func MapPortBigEndian(port uint16) (res [2]byte) {
 	return res
 }
 
-func BuildVersion(startString [4]byte, recvIp [4]byte, recvPort uint16, sendPort uint16) (MessageHeader, VersionPayload) {
+func BuildVersion(startString [4]byte, recvIp net.IP, recvPort uint16, sendIp net.IP, sendPort uint16) (MessageHeader, VersionPayload) {
 	payload := VersionPayload{
 		Version:          Version17,
 		Services:         ServiceUnnamed,
 		Timestamp:        time.Now().Unix(),
 		AddrRecvServices: ServiceUnnamed,
-		AddrRecvIp:       MapIpv4toIpv6(recvIp),
+		AddrRecvIp:       MapIp(recvIp),
 		AddrRecvPort:     MapPortBigEndian(recvPort),
 		AddrTransServ:    ServiceUnnamed,
-		AddrTransIp:      [16]byte{0x01, 0x00, 0x00, 0x7F, 0xFF, 0xFF, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00},
+		AddrTransIp:      MapIp(sendIp),
 		AddrTransPort:    MapPortBigEndian(sendPort),
 		Nonce:            0,
 		UserAgentBytes:   18,
@@ -92,7 +103,7 @@ func BuildVersion(startString [4]byte, recvIp [4]byte, recvPort uint16, sendPort
 
 	header := MessageHeader{
 		StartString: startString,
-		Cmd:         [12]byte{'v', 'e', 'r', 's', 'i', 'o', 'n', 0x00, 0x00, 0x00, 0x00, 0x00},
+		Cmd:         VersionCmd,
 		PayloadSize: uint32(payloadRaw.Len()),
 		Checksum:    CalculateChecksum(payloadRaw.Bytes()),
 	}
@@ -104,7 +115,7 @@ func BuildVerack(startString [4]byte) MessageHeader {
 	x := []byte{}
 	msg := MessageHeader{
 		startString,
-		[12]byte{'v', 'e', 'r', 'a', 'c', 'k', 0x00, 0x00, 0x00, 0x00, 0x00, 0x00},
+		VerackCmd,
 		0,
 		CalculateChecksum(x),
 	}
@@ -115,9 +126,15 @@ func BuildGetaddr(startString [4]byte) MessageHeader {
 	x := []byte{}
 	msg := MessageHeader{
 		startString,
-		[12]byte{'g', 'e', 't', 'a', 'd', 'd', 'r', 0x00, 0x00, 0x00, 0x00, 0x00},
+		GetaddrCmd,
 		0,
 		CalculateChecksum(x),
 	}
 	return msg
+}
+
+func ConvertPayloadToBytes(payload interface{}) []byte {
+	buff := new(bytes.Buffer)
+	binary.Write(buff, binary.LittleEndian, payload)
+	return buff.Bytes()
 }

@@ -2,21 +2,25 @@ package connection
 
 import (
 	"bda/types"
+	"bytes"
 	"encoding/binary"
 	"errors"
+	"io"
 	"net"
-	"time"
 )
 
 var InvalidMessageHeader = errors.New("Invalid message Header")
 
 func RecvDashMessage(conn net.Conn) (types.MessageHeader, []byte, error) {
-	conn.SetReadDeadline(time.Now().Add(10 * time.Second))
-	conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
-
+	msgHeaderBuf := make([]byte, types.MessageHeaderSize)
 	msgHeader := types.MessageHeader{}
-	err := binary.Read(conn, binary.LittleEndian, &msgHeader)
 
+	_, err := io.ReadFull(conn, msgHeaderBuf)
+	if err != nil {
+		return types.MessageHeader{}, []byte{}, err
+	}
+
+	err = binary.Read(bytes.NewBuffer(msgHeaderBuf), binary.LittleEndian, &msgHeader)
 	if err != nil {
 		return types.MessageHeader{}, []byte{}, err
 	}
@@ -29,19 +33,25 @@ func RecvDashMessage(conn net.Conn) (types.MessageHeader, []byte, error) {
 		return msgHeader, nil, nil
 	}
 
-	recvBuff := make([]byte, 2048)
-	total := 0
-	for {
-		read, err := conn.Read(recvBuff)
-		if err != nil {
-			return msgHeader, []byte{}, err
-		}
-
-		total += read
-		if total >= int(msgHeader.PayloadSize) {
-			break
-		}
+	payloadBuf := make([]byte, msgHeader.PayloadSize)
+	_, err = io.ReadFull(conn, payloadBuf)
+	if err != nil {
+		return msgHeader, nil, err
 	}
 
-	return msgHeader, recvBuff, nil
+	return msgHeader, payloadBuf, nil
+}
+
+func SendDashMessage(conn net.Conn, msgHeader types.MessageHeader, payload []byte) (int, error) {
+	buff := new(bytes.Buffer)
+	binary.Write(buff, binary.LittleEndian, msgHeader)
+	if len(payload) > 0 {
+		binary.Write(buff, binary.LittleEndian, payload)
+	}
+
+	sent, err := conn.Write(buff.Bytes())
+	if err != nil {
+		return 0, err
+	}
+	return sent, nil
 }
