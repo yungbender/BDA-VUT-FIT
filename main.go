@@ -1,58 +1,41 @@
 package main
 
 import (
-	"bda/connection"
+	"bda/api"
+	crawlerCollector "bda/crawler_collector"
+	pingerCollector "bda/pinger_collector"
 	"bda/types"
-	"bytes"
-	"encoding/binary"
-	"fmt"
+	"flag"
 	"net"
-	"time"
 )
 
+func main_() {
+	seedIpRaw := flag.String("seedip", "", "Seed node IP to begin crawl")
+	seedPortRaw := flag.Uint("seedport", 99999, "Seed node PORT to begin crawl")
+	flag.Parse()
+
+	if seedIpRaw == nil || *seedIpRaw == "" {
+		panic("Invalid seed node IP")
+	}
+	seedIp := net.ParseIP(*seedIpRaw)
+	if seedIp == nil {
+		panic("Invalid seed node IP")
+	}
+
+	if seedPortRaw == nil || *seedPortRaw > 65535 {
+		panic("Invalid seed node IP")
+	}
+	seedPort := uint16(*seedPortRaw)
+	addrsees := make(chan types.AddrChanMsg)
+	versions := make(chan types.VersionChanMsg)
+
+	crawlerCollector.Collect(addrsees, versions, seedIp, seedPort)
+}
+
+func main__() {
+	pingerCollector.Collect()
+}
+
 func main() {
-
-	conn, err := connection.ConnectTCP([4]byte{129, 213, 163, 51}, 9999)
-	if err != nil {
-		panic(err)
-	}
-	err = conn.SetWriteDeadline(time.Now().Add(5 * time.Second))
-	if err != nil {
-		panic(err)
-	}
-	err = conn.SetReadDeadline(time.Now().Add(5 * time.Second))
-	if err != nil {
-		panic(err)
-	}
-
-	println(conn.LocalAddr().String())
-	println(conn.RemoteAddr().String())
-
-	msg, payload := types.BuildVersion(types.MainnetStartString, [4]byte{129, 213, 163, 51}, uint16(conn.LocalAddr().(*net.TCPAddr).Port), 9999)
-	buff := new(bytes.Buffer)
-	binary.Write(buff, binary.LittleEndian, msg)
-	binary.Write(buff, binary.LittleEndian, payload)
-
-	_, err = conn.Write(buff.Bytes())
-	if err != nil {
-		panic(err)
-	}
-
-	msgg, recvbuff, err := connection.RecvDashMessage(conn)
-
-	fmt.Printf("%x\n", msgg)
-	fmt.Printf("%x\n", recvbuff)
-	println(err)
-
-	msgg, recvbuff, err = connection.RecvDashMessage(conn)
-
-	fmt.Printf("%x\n", msgg)
-	fmt.Printf("%x\n", recvbuff)
-	if err != nil {
-		println(err.Error())
-	}
-
-	time.Sleep(time.Duration(5 * time.Second))
-
-	conn.Close()
+	api.Start()
 }
