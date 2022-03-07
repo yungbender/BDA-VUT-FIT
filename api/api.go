@@ -51,9 +51,38 @@ func StatusHandler(ctx *gin.Context) {
 	return
 }
 
+type UserAgentsResponse []string
+
+type UserAgentsSelect struct {
+	UserAgent string
+}
+
+func UserAgentsHandler(ctx *gin.Context) {
+	db, err := models.GetDb()
+
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, Response{Code: http.StatusInternalServerError, Data: struct{}{}})
+		return
+	}
+
+	var uas []UserAgentsSelect
+	var res UserAgentsResponse
+	db.Table("nodes").Select("DISTINCT user_agent").Where("user_agent != ?", "").Find(&uas)
+
+	for i := range uas {
+		ua := uas[i]
+
+		res = append(res, ua.UserAgent)
+	}
+
+	ctx.JSON(http.StatusOK, Response{Code: http.StatusOK, Data: res})
+	return
+}
+
 func Start() {
 	router := gin.Default()
 
 	router.GET("/v1/status", StatusHandler)
+	router.GET("/v1/useragents", UserAgentsHandler)
 	router.Run(":13337")
 }
