@@ -6,6 +6,7 @@ import (
 	"bda/models"
 	"bda/types"
 	"encoding/binary"
+	"flag"
 	"fmt"
 	"net"
 	"time"
@@ -109,4 +110,27 @@ func Collect(addrses chan types.AddrChanMsg, versions chan types.VersionChanMsg,
 		}
 	}
 
+}
+
+func Start() {
+	seedIpRaw := flag.String("seedip", "", "Seed node IP to begin crawl")
+	seedPortRaw := flag.Uint("seedport", 99999, "Seed node PORT to begin crawl")
+	flag.Parse()
+
+	if seedIpRaw == nil || *seedIpRaw == "" {
+		panic("Invalid seed node IP")
+	}
+	seedIp := net.ParseIP(*seedIpRaw)
+	if seedIp == nil {
+		panic("Invalid seed node IP")
+	}
+
+	if seedPortRaw == nil || *seedPortRaw > 65535 {
+		panic("Invalid seed node IP")
+	}
+	seedPort := uint16(*seedPortRaw)
+	addrsees := make(chan types.AddrChanMsg)
+	versions := make(chan types.VersionChanMsg)
+
+	Collect(addrsees, versions, seedIp, seedPort)
 }

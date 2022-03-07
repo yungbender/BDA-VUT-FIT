@@ -71,7 +71,7 @@ func UpdateActiveStatus(db *gorm.DB, ping types.PingChanMsg) {
 	}
 }
 
-func Collect() {
+func Collect(livePings map[string]bool, pings chan types.PingChanMsg) {
 	logger := logger.Logger{
 		Prefix: "PINGER_COLLECTOR",
 	}
@@ -80,9 +80,6 @@ func Collect() {
 	if err != nil {
 		panic(err)
 	}
-
-	livePings := make(map[string]bool)
-	pings := make(chan types.PingChanMsg)
 
 	ResetActiveNodes(db)
 
@@ -107,4 +104,11 @@ func Collect() {
 			}
 		}
 	}
+}
+
+func Start() {
+	livePings := make(map[string]bool)
+	pings := make(chan types.PingChanMsg)
+
+	Collect(livePings, pings)
 }
