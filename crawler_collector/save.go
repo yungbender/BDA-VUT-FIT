@@ -1,4 +1,4 @@
-package collector
+package crawler_collector
 
 import (
 	"bda/models"

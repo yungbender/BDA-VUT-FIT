@@ -8,6 +8,8 @@ import (
 	"time"
 )
 
+var MainnetDnsSeed = "dnsseed.dash.org"
+
 var MainnetStartString = [4]byte{0xBF, 0x0C, 0x6B, 0xBD}
 var TestnetStartString = [4]byte{0xCE, 0xE2, 0xCA, 0xFF}
 

@@ -1,4 +1,4 @@
-package collector
+package crawler_collector
 
 import (
 	"bda/crawler"
@@ -113,21 +113,35 @@ func Collect(addrses chan types.AddrChanMsg, versions chan types.VersionChanMsg,
 }
 
 func Start() {
-	seedIpRaw := flag.String("seedip", "", "Seed node IP to begin crawl")
+	seedIpRaw := flag.String("seedip", "NONE", "Seed node IP to begin crawl")
 	seedPortRaw := flag.Uint("seedport", 99999, "Seed node PORT to begin crawl")
 	flag.Parse()
 
-	if seedIpRaw == nil || *seedIpRaw == "" {
-		panic("Invalid seed node IP")
-	}
-	seedIp := net.ParseIP(*seedIpRaw)
-	if seedIp == nil {
-		panic("Invalid seed node IP")
+	var seedIp net.IP
+
+	if *seedIpRaw != "NONE" {
+		seedIp = net.ParseIP(*seedIpRaw)
+		if seedIp == nil {
+			panic("Invalid seed node IP")
+		}
 	}
 
-	if seedPortRaw == nil || *seedPortRaw > 65535 {
-		panic("Invalid seed node IP")
+	if (*seedPortRaw != 99999 && *seedIpRaw == "NONE") || (*seedPortRaw == 99999 && *seedIpRaw != "NONE") {
+		panic("Invalid combination of IP and PORT")
+	} else if *seedPortRaw == 99999 && *seedIpRaw == "NONE" {
+		ip, err := PickRandomDnsSeed()
+		if err != nil {
+			panic(err)
+		}
+		*seedPortRaw = 9999
+		seedIp = ip
+		logger.Info(logrus.Fields{}, fmt.Sprintf("Using random IP from %s: %s", types.MainnetDnsSeed, seedIp.String()))
 	}
+
+	if *seedPortRaw > 65535 {
+		panic("Invalid seed node PORT")
+	}
+
 	seedPort := uint16(*seedPortRaw)
 	addrsees := make(chan types.AddrChanMsg)
 	versions := make(chan types.VersionChanMsg)
