@@ -51,11 +51,12 @@ func StatusHandler(ctx *gin.Context) {
 	return
 }
 
-type UserAgentsResponse []string
-
 type UserAgentsSelect struct {
-	UserAgent string
+	UserAgent  string  `json:"user_agent"`
+	Percentage float64 `json:"percentage"`
 }
+
+type UserAgentsResponse []UserAgentsSelect
 
 func UserAgentsHandler(ctx *gin.Context) {
 	db, err := models.GetDb()
@@ -67,14 +68,47 @@ func UserAgentsHandler(ctx *gin.Context) {
 
 	var uas []UserAgentsSelect
 	var res UserAgentsResponse
-	db.Table("nodes").Select("DISTINCT user_agent").Where("user_agent != ?", "").Find(&uas)
+
+	db.Table("nodes").
+		Select("user_agent, ROUND(COUNT(*) * 100.0 / SUM(COUNT(*)) OVER(), 2) AS percentage").
+		Where("user_agent != ?", "").
+		Group("user_agent").
+		Find(&uas)
 
 	for i := range uas {
 		ua := uas[i]
 
-		res = append(res, ua.UserAgent)
+		res = append(res, ua)
 	}
 
+	ctx.JSON(http.StatusOK, Response{Code: http.StatusOK, Data: res})
+	return
+}
+
+type LiveNodeObj struct {
+	IP   string `json:"ip"`
+	Port uint16 `json:"port"`
+}
+
+type LiveNodesResponse []LiveNodeObj
+
+func LiveNodesHandler(ctx *gin.Context) {
+	db, err := models.GetDb()
+
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, Response{Code: http.StatusInternalServerError, Data: struct{}{}})
+		return
+	}
+
+	var nodes []models.Node
+	db.Where("active = ?", 1).Find(&nodes)
+
+	var res LiveNodesResponse
+	for i := range nodes {
+		node := nodes[i]
+
+		res = append(res, LiveNodeObj{IP: node.Ip, Port: node.Port})
+	}
 	ctx.JSON(http.StatusOK, Response{Code: http.StatusOK, Data: res})
 	return
 }
@@ -84,5 +118,6 @@ func Start() {
 
 	router.GET("/v1/status", StatusHandler)
 	router.GET("/v1/useragents", UserAgentsHandler)
+	router.GET("/v1/livenodes", LiveNodesHandler)
 	router.Run(":13337")
 }
