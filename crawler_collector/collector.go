@@ -90,7 +90,7 @@ func Collect(addrses chan types.AddrChanMsg, versions chan types.VersionChanMsg,
 			SaveVersion(db, version)
 		// If there is no new message in channels for X minutes
 		case <-time.After(2 * time.Minute):
-			logger.Info(logrus.Fields{}, fmt.Sprintf("Timeout: %d", len(maxConnections)))
+			logger.Info(logrus.Fields{}, fmt.Sprintf("Still hanging: %d connections", len(maxConnections)))
 
 			// If there is no live connection, finish the crawling
 			if len(maxConnections) == 0 {
@@ -109,7 +109,6 @@ func Collect(addrses chan types.AddrChanMsg, versions chan types.VersionChanMsg,
 			}
 		}
 	}
-
 }
 
 func Start() {

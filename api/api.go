@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
 
 type Response struct {
@@ -23,13 +24,12 @@ type StatusSelect struct {
 	Cnt    int
 }
 
-func StatusHandler(ctx *gin.Context) {
-	db, err := models.GetDb()
+type Handler struct {
+	DB *gorm.DB
+}
 
-	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, Response{Code: http.StatusInternalServerError, Data: struct{}{}})
-		return
-	}
+func (h *Handler) StatusHandler(ctx *gin.Context) {
+	db := h.DB
 
 	var sel []StatusSelect
 	db.Table("nodes").Select("active, COUNT(*) AS cnt").Group("active").Find(&sel)
@@ -58,13 +58,8 @@ type UserAgentsSelect struct {
 
 type UserAgentsResponse []UserAgentsSelect
 
-func UserAgentsHandler(ctx *gin.Context) {
-	db, err := models.GetDb()
-
-	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, Response{Code: http.StatusInternalServerError, Data: struct{}{}})
-		return
-	}
+func (h *Handler) UserAgentsHandler(ctx *gin.Context) {
+	db := h.DB
 
 	var uas []UserAgentsSelect
 	var res UserAgentsResponse
@@ -92,13 +87,8 @@ type LiveNodeObj struct {
 
 type LiveNodesResponse []LiveNodeObj
 
-func LiveNodesHandler(ctx *gin.Context) {
-	db, err := models.GetDb()
-
-	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, Response{Code: http.StatusInternalServerError, Data: struct{}{}})
-		return
-	}
+func (h *Handler) LiveNodesHandler(ctx *gin.Context) {
+	db := h.DB
 
 	var nodes []models.Node
 	db.Where("active = ?", 1).Find(&nodes)
@@ -116,8 +106,14 @@ func LiveNodesHandler(ctx *gin.Context) {
 func Start() {
 	router := gin.Default()
 
-	router.GET("/v1/status", StatusHandler)
-	router.GET("/v1/useragents", UserAgentsHandler)
-	router.GET("/v1/livenodes", LiveNodesHandler)
-	router.Run(":13337")
+	db, err := models.GetDb()
+	if err != nil {
+		panic(err)
+	}
+	handler := Handler{DB: db}
+
+	router.GET("/v1/status", handler.StatusHandler)
+	router.GET("/v1/useragents", handler.UserAgentsHandler)
+	router.GET("/v1/livenodes", handler.LiveNodesHandler)
+	router.Run(":8080")
 }

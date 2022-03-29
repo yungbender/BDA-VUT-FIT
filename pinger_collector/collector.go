@@ -30,7 +30,6 @@ func StartPingers(db *gorm.DB, livePings map[string]bool, pings chan types.PingC
 		}
 
 		if live, _ := livePings[node.Ip+":"+fmt.Sprint(node.Port)]; !live {
-			fmt.Printf("Starting pinger for %s\n", node.Ip)
 			go pinger.Pinger(net.ParseIP(node.Ip), node.Port, &pings)
 		}
 	}
@@ -92,7 +91,6 @@ func Collect(livePings map[string]bool, pings chan types.PingChanMsg) {
 		select {
 		case <-pingersTimer.C:
 			// Try to start pingers on dead nodes again§
-			fmt.Println(livePings)
 			StartPingers(db, livePings, pings)
 		case ping := <-pings:
 			UpdateActiveStatus(db, ping)

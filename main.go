@@ -4,6 +4,7 @@ import (
 	"bda/api"
 	crawlerCollector "bda/crawler_collector"
 	pingerCollector "bda/pinger_collector"
+	"fmt"
 	"os"
 )
 
@@ -17,5 +18,7 @@ func main() {
 		case "api":
 			api.Start()
 		}
+	} else {
+		fmt.Println("Select entrypoint parameter: pinger, crawler or api")
 	}
 }

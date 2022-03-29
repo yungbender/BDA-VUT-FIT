@@ -65,14 +65,12 @@ func Pinger(nodeIp net.IP, nodePort uint16, recvPing *chan types.PingChanMsg) {
 		pingMsg, pingPayload := types.BuildPing(types.MainnetStartString)
 		payload := types.ConvertPayloadToBytes(pingPayload)
 
-		fmt.Printf("Pinging: %s\n", nodeIp.String())
 		_, err := connection.SendDashMessage(conn, pingMsg, payload)
 		if err != nil {
 			if recvPing != nil {
 				if !once {
 					SendStatus(types.Offline, nodeIp, nodePort, *recvPing)
 				} else {
-					fmt.Printf("Sending unknown %s\n", nodeIp.String())
 					SendStatus(types.Unknown, nodeIp, nodePort, *recvPing)
 				}
 			}
@@ -87,7 +85,6 @@ func Pinger(nodeIp net.IP, nodePort uint16, recvPing *chan types.PingChanMsg) {
 					if !once {
 						SendStatus(types.Offline, nodeIp, nodePort, *recvPing)
 					} else {
-						fmt.Printf("Sending unknown %s\n", nodeIp.String())
 						SendStatus(types.Unknown, nodeIp, nodePort, *recvPing)
 					}
 				}
@@ -102,7 +99,6 @@ func Pinger(nodeIp net.IP, nodePort uint16, recvPing *chan types.PingChanMsg) {
 						if !once {
 							SendStatus(types.Offline, nodeIp, nodePort, *recvPing)
 						} else {
-							fmt.Printf("Sending unknown %s\n", nodeIp.String())
 							SendStatus(types.Unknown, nodeIp, nodePort, *recvPing)
 						}
 					}
