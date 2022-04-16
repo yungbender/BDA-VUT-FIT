@@ -48,15 +48,22 @@ func (h *Handler) StatusHandler(ctx *gin.Context) {
 		}
 	}
 	ctx.JSON(http.StatusOK, Response{Code: http.StatusOK, Data: res})
-	return
 }
 
 type UserAgentsSelect struct {
 	UserAgent  string  `json:"user_agent"`
 	Percentage float64 `json:"percentage"`
+	Count      int     `json:"count"`
 }
 
-type UserAgentsResponse []UserAgentsSelect
+type UserAgentsCountSelect struct {
+	Total int
+}
+
+type UserAgentsResponse struct {
+	UserAgents []UserAgentsSelect `json:"user_agents"`
+	Total      int                `json:"total_count"`
+}
 
 func (h *Handler) UserAgentsHandler(ctx *gin.Context) {
 	db := h.DB
@@ -65,7 +72,7 @@ func (h *Handler) UserAgentsHandler(ctx *gin.Context) {
 	var res UserAgentsResponse
 
 	db.Table("nodes").
-		Select("user_agent, ROUND(COUNT(*) * 100.0 / SUM(COUNT(*)) OVER(), 2) AS percentage").
+		Select("user_agent, ROUND(COUNT(*) * 100.0 / SUM(COUNT(*)) OVER(), 2) AS percentage, COUNT(*) AS count").
 		Where("user_agent != ?", "").
 		Group("user_agent").
 		Find(&uas)
@@ -73,11 +80,18 @@ func (h *Handler) UserAgentsHandler(ctx *gin.Context) {
 	for i := range uas {
 		ua := uas[i]
 
-		res = append(res, ua)
+		res.UserAgents = append(res.UserAgents, ua)
 	}
 
+	var t UserAgentsCountSelect
+	db.Table("nodes").
+		Select("COUNT(*) AS total").
+		Where("user_agent != ?", "").
+		Find(&t)
+
+	res.Total = t.Total
+
 	ctx.JSON(http.StatusOK, Response{Code: http.StatusOK, Data: res})
-	return
 }
 
 type LiveNodeObj struct {
@@ -100,7 +114,6 @@ func (h *Handler) LiveNodesHandler(ctx *gin.Context) {
 		res = append(res, LiveNodeObj{IP: node.Ip, Port: node.Port})
 	}
 	ctx.JSON(http.StatusOK, Response{Code: http.StatusOK, Data: res})
-	return
 }
 
 func Start() {
