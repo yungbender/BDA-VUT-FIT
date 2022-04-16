@@ -12,32 +12,42 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-func SendStatus(status types.ActiveStatus, nodeIp net.IP, nodePort uint16, recvPing chan types.PingChanMsg) {
-	ping := types.PingChanMsg{
-		Active:   status,
-		NodeIp:   nodeIp,
-		NodePort: nodePort,
-	}
-	recvPing <- ping
+type Pinger struct {
+	nodeIp   net.IP
+	nodePort uint16
+	recvPing *chan types.PingChanMsg
 }
 
-func Pinger(nodeIp net.IP, nodePort uint16, recvPing *chan types.PingChanMsg) {
+func NewPinger(nodeIp net.IP, nodePort uint16, recvPing *chan types.PingChanMsg) Pinger {
+	return Pinger{nodeIp: nodeIp, nodePort: nodePort, recvPing: recvPing}
+}
+
+func (p *Pinger) SendStatus(status types.ActiveStatus) {
+	ping := types.PingChanMsg{
+		Active:   status,
+		NodeIp:   p.nodeIp,
+		NodePort: p.nodePort,
+	}
+	*p.recvPing <- ping
+}
+
+func (p *Pinger) Ping() {
 	logger := logger.Logger{
 		Prefix: "PINGER",
 	}
 	loggerFields := logrus.Fields{
-		"ip":   nodeIp.String(),
-		"port": nodePort,
+		"ip":   p.nodeIp.String(),
+		"port": p.nodePort,
 	}
 
 	logger.Info(loggerFields, "Establishing PING connection")
 
 	// Seal TCP handshake
-	conn, err := connection.ConnectTCP(nodeIp, nodePort)
+	conn, err := connection.ConnectTCP(p.nodeIp, p.nodePort)
 	if err != nil {
 		logger.Error(loggerFields, fmt.Sprintf("Error establishing TCP connection: %s\n", err.Error()))
-		if recvPing != nil {
-			SendStatus(types.Offline, nodeIp, nodePort, *recvPing)
+		if p.recvPing != nil {
+			p.SendStatus(types.Offline)
 		}
 		return
 	}
@@ -47,8 +57,8 @@ func Pinger(nodeIp net.IP, nodePort uint16, recvPing *chan types.PingChanMsg) {
 	err = connection.SealDashHandshake(conn, nil)
 	if err != nil && !errors.Is(err, connection.InvalidNodeType) {
 		logger.Error(loggerFields, fmt.Sprintf("Error establishing DASH handshake: %s\n", err.Error()))
-		if recvPing != nil {
-			SendStatus(types.Offline, nodeIp, nodePort, *recvPing)
+		if p.recvPing != nil {
+			p.SendStatus(types.Offline)
 		}
 		return
 	}
@@ -67,11 +77,11 @@ func Pinger(nodeIp net.IP, nodePort uint16, recvPing *chan types.PingChanMsg) {
 
 		_, err := connection.SendDashMessage(conn, pingMsg, payload)
 		if err != nil {
-			if recvPing != nil {
+			if p.recvPing != nil {
 				if !once {
-					SendStatus(types.Offline, nodeIp, nodePort, *recvPing)
+					p.SendStatus(types.Offline)
 				} else {
-					SendStatus(types.Unknown, nodeIp, nodePort, *recvPing)
+					p.SendStatus(types.Unknown)
 				}
 			}
 			return
@@ -81,11 +91,11 @@ func Pinger(nodeIp net.IP, nodePort uint16, recvPing *chan types.PingChanMsg) {
 		for {
 			msgHeader, payload, err := connection.RecvDashMessage(conn)
 			if err != nil {
-				if recvPing != nil {
+				if p.recvPing != nil {
 					if !once {
-						SendStatus(types.Offline, nodeIp, nodePort, *recvPing)
+						p.SendStatus(types.Offline)
 					} else {
-						SendStatus(types.Unknown, nodeIp, nodePort, *recvPing)
+						p.SendStatus(types.Unknown)
 					}
 				}
 				return
@@ -95,11 +105,11 @@ func Pinger(nodeIp net.IP, nodePort uint16, recvPing *chan types.PingChanMsg) {
 				pongMsg := types.BuildPong(types.MainnetStartString, payload)
 				_, err := connection.SendDashMessage(conn, pongMsg, payload)
 				if err != nil {
-					if recvPing != nil {
+					if p.recvPing != nil {
 						if !once {
-							SendStatus(types.Offline, nodeIp, nodePort, *recvPing)
+							p.SendStatus(types.Offline)
 						} else {
-							SendStatus(types.Unknown, nodeIp, nodePort, *recvPing)
+							p.SendStatus(types.Unknown)
 						}
 					}
 					return
@@ -107,8 +117,8 @@ func Pinger(nodeIp net.IP, nodePort uint16, recvPing *chan types.PingChanMsg) {
 				// If got PONG, node online
 			} else if msgHeader.Cmd == types.PongCmd {
 				once = true
-				if recvPing != nil {
-					SendStatus(types.Online, nodeIp, nodePort, *recvPing)
+				if p.recvPing != nil {
+					p.SendStatus(types.Online)
 					break
 				}
 			}

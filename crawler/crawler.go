@@ -11,34 +11,43 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-func AcquireConn(maxConnections chan net.IP, ip net.IP) {
-	maxConnections <- ip
+type Crawler struct {
+	nodeIp         net.IP
+	nodePort       uint16
+	maxConnections chan net.IP
+	recvAddr       *chan types.AddrChanMsg
+	recvVer        *chan types.VersionChanMsg
 }
 
-func ReleaseConn(maxConnections chan net.IP) {
-	<-maxConnections
+func NewCrawler(nodeIp net.IP, nodePort uint16, maxConnections chan net.IP,
+	recvAddr *chan types.AddrChanMsg, recvVer *chan types.VersionChanMsg) Crawler {
+	return Crawler{nodeIp: nodeIp, nodePort: nodePort, maxConnections: maxConnections, recvAddr: recvAddr, recvVer: recvVer}
 }
 
-func CrawlNode(recvAddr *chan types.AddrChanMsg, recvVer *chan types.VersionChanMsg,
-	maxConnections chan net.IP, nodeIp net.IP, nodePort uint16) {
+func (c *Crawler) AcquireConn() {
+	c.maxConnections <- c.nodeIp
+}
 
+func (c *Crawler) ReleaseConn() {
+	<-c.maxConnections
+}
+
+func (c *Crawler) Crawl() {
 	// Create logger and its prefix
 	logger := logger.Logger{
 		Prefix: "CRAWLER",
 	}
 	loggerFields := logrus.Fields{
-		"ip":   nodeIp.String(),
-		"port": nodePort,
+		"ip":   c.nodeIp.String(),
+		"port": c.nodePort,
 	}
 
 	// Check if there is max created sockets (to not break OS ulimit)
-	AcquireConn(maxConnections, nodeIp)
-	defer ReleaseConn(maxConnections)
-
-	logger.Info(loggerFields, "Establishing TCP connection")
+	c.AcquireConn()
+	defer c.ReleaseConn()
 
 	// Establish TCP connection to node
-	conn, err := connection.ConnectTCP(nodeIp, nodePort)
+	conn, err := connection.ConnectTCP(c.nodeIp, c.nodePort)
 	if err != nil {
 		logger.Error(loggerFields, fmt.Sprintf("Error establishing TCP connection: %s\n", err.Error()))
 		return
@@ -48,8 +57,7 @@ func CrawlNode(recvAddr *chan types.AddrChanMsg, recvVer *chan types.VersionChan
 	defer conn.Close()
 
 	// Establish DASH handshake
-	logger.Info(loggerFields, "Establishing DASH handshake")
-	err = connection.SealDashHandshake(conn, recvVer)
+	err = connection.SealDashHandshake(conn, c.recvVer)
 	if errors.Is(err, connection.InvalidNodeType) {
 		logger.Error(loggerFields, "Connected to the unknown user-agent, not requesting GETADDR")
 		return
@@ -59,7 +67,6 @@ func CrawlNode(recvAddr *chan types.AddrChanMsg, recvVer *chan types.VersionChan
 	}
 
 	// Request ADDR messages
-	logger.Info(loggerFields, "Requesting GETADDR")
 	addresses, err := connection.PerformGetaddr(conn)
 
 	if err != nil {
@@ -72,14 +79,11 @@ func CrawlNode(recvAddr *chan types.AddrChanMsg, recvVer *chan types.VersionChan
 	for _, address := range addresses {
 		addrChanMsg := types.AddrChanMsg{
 			Addr:     address,
-			NodeIp:   nodeIp,
-			NodePort: nodePort,
+			NodeIp:   c.nodeIp,
+			NodePort: c.nodePort,
 		}
-		if recvAddr != nil {
-			*recvAddr <- addrChanMsg
+		if c.recvAddr != nil {
+			*c.recvAddr <- addrChanMsg
 		}
 	}
-
-	// Disconnect from node
-	logger.Info(loggerFields, "Disconnecting from node")
 }

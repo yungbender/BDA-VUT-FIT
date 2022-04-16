@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/sirupsen/logrus"
-	"gorm.io/gorm"
 )
 
 const MaxConnections = 2000
@@ -26,16 +25,8 @@ type DiscoveredNode struct {
 	Version *types.VersionChanMsg
 }
 
-func BuildNodesDbCache(db *gorm.DB) map[string]models.Node {
-	cache := make(map[string]models.Node)
-
-	var nodes []models.Node
-	db.Find(&nodes)
-
-	for _, node := range nodes {
-		cache[node.Ip] = node
-	}
-	return cache
+func DiscoveredNodeKey(ip net.IP, port uint16) string {
+	return ip.String() + ":" + fmt.Sprint(port)
 }
 
 func Collect(addrses chan types.AddrChanMsg, versions chan types.VersionChanMsg, seedIp net.IP, seedPort uint16) {
@@ -46,46 +37,49 @@ func Collect(addrses chan types.AddrChanMsg, versions chan types.VersionChanMsg,
 	maxConnections := make(chan net.IP, MaxConnections)
 
 	// Create map of discovered nodes from ADDR messages
-	discoveredNode := make(map[string]DiscoveredNode)
+	discoveredNodes := make(map[string]DiscoveredNode)
 
 	logger.Info(logrus.Fields{}, fmt.Sprintf("Starting initial crawler on %s", seedIp.String()))
 
 	// Start crawler for seed node
-	go crawler.CrawlNode(&addrses, &versions, maxConnections, seedIp, seedPort)
+	seedCrawler := crawler.NewCrawler(seedIp, seedPort, maxConnections, &addrses, &versions)
+	go seedCrawler.Crawl()
 
 	for {
 		select {
 		// If crawler sent a new IP from ADDR
 		case addr := <-addrses:
 			newIp := net.IP(addr.Addr.IpAddr[:])
+			port := binary.BigEndian.Uint16(addr.Addr.Port[:])
 			// If new IP is not in map, save it and start crawler to connect to that IP to get ADDRs
-			if known, exists := discoveredNode[newIp.String()]; !exists {
-				logger.Info(logrus.Fields{}, fmt.Sprintf("Discovered new: %s PORT: %d, From: %s", newIp.String(), binary.BigEndian.Uint16(addr.Addr.Port[:]), addr.NodeIp.String()))
+			if known, exists := discoveredNodes[DiscoveredNodeKey(newIp, port)]; !exists {
+				logger.Info(logrus.Fields{}, fmt.Sprintf("Discovered new: %s PORT: %d, From: %s", newIp.String(), port, addr.NodeIp.String()))
 				knownNode := DiscoveredNode{
 					Addr:    &addr,
 					Version: nil,
 				}
-				discoveredNode[newIp.String()] = knownNode
-				go crawler.CrawlNode(&addrses, &versions, maxConnections, newIp, binary.BigEndian.Uint16(addr.Addr.Port[:]))
+				discoveredNodes[DiscoveredNodeKey(newIp, port)] = knownNode
+				crawler := crawler.NewCrawler(newIp, port, maxConnections, &addrses, &versions)
+				go crawler.Crawl()
 			} else if exists && known.Addr == nil {
 				logger.Info(logrus.Fields{}, fmt.Sprintf("Rediscovered: %s PORT: %d, From: %s", newIp.String(), binary.BigEndian.Uint16(addr.Addr.Port[:]), addr.NodeIp.String()))
 				known.Addr = &addr
-				discoveredNode[newIp.String()] = known
+				discoveredNodes[DiscoveredNodeKey(newIp, port)] = known
 			}
 			SaveAddr(db, addr)
 		// If crawler established a connection to the node and got VERSION msg
 		case version := <-versions:
-			if known, exists := discoveredNode[version.NodeIp.String()]; !exists {
+			if known, exists := discoveredNodes[DiscoveredNodeKey(version.NodeIp, version.NodePort)]; !exists {
 				logger.Info(logrus.Fields{}, fmt.Sprintf("Got version from non-ADDRed IP: %s , User-Agent: %s", version.NodeIp.String(), version.UserAgent))
 				knownNode := DiscoveredNode{
 					Addr:    nil,
 					Version: &version,
 				}
-				discoveredNode[version.NodeIp.String()] = knownNode
+				discoveredNodes[DiscoveredNodeKey(version.NodeIp, version.NodePort)] = knownNode
 			} else if exists && known.Version == nil {
 				logger.Info(logrus.Fields{}, fmt.Sprintf("Got VERSION from IP: %s ,User-Agent: %s", version.NodeIp.String(), version.UserAgent))
 				known.Version = &version
-				discoveredNode[version.NodeIp.String()] = known
+				discoveredNodes[DiscoveredNodeKey(version.NodeIp, version.NodePort)] = known
 			}
 			SaveVersion(db, version)
 		// If there is no new message in channels for X minutes
@@ -95,16 +89,14 @@ func Collect(addrses chan types.AddrChanMsg, versions chan types.VersionChanMsg,
 			// If there is no live connection, finish the crawling
 			if len(maxConnections) == 0 {
 				logger.Info(logrus.Fields{}, "End of crawl")
-				logger.Info(logrus.Fields{}, fmt.Sprintf("Got %d IPs", len(discoveredNode)))
-
+				logger.Info(logrus.Fields{}, fmt.Sprintf("Got %d IPs", len(discoveredNodes)))
 				activeCnt := 0
-				for _, knownNode := range discoveredNode {
+				for _, knownNode := range discoveredNodes {
 					if knownNode.Version != nil {
 						activeCnt++
 					}
 				}
 				logger.Info(logrus.Fields{}, fmt.Sprintf("Got %d ACTIVE IPs", activeCnt))
-
 				return
 			}
 		}

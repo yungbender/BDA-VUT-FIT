@@ -27,7 +27,7 @@ WORKDIR /
 ADD ./crawler_collector/crawler_cron.sh /
 RUN chmod +x /crawler_cron.sh
 #RUN echo "0     */2       *       *       *       run-parts /etc/periodic/2hours" >> /etc/crontabs/root
-RUN echo "*/1     *       *       *       *       /crawler_cron.sh > /dev/stdout" >> /etc/crontabs/root
+RUN echo "*     */4       *       *       *       /crawler_cron.sh > /dev/stdout" >> /etc/crontabs/root
 RUN crontab -l
 
 # set number of file descriptors over 16k - 16k max stable connections
